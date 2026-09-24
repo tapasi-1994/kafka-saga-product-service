@@ -1,7 +1,9 @@
 package com.kafka.saga.ProductService.handler;
 
 import com.kafka.saga.CoreService.dto.Product;
+import com.kafka.saga.CoreService.dto.commands.CancelProductReservationCommand;
 import com.kafka.saga.CoreService.dto.commands.ReserveProductCommand;
+import com.kafka.saga.CoreService.events.ProductReservationCancelledEvent;
 import com.kafka.saga.CoreService.events.ProductReservationFailedEvent;
 import com.kafka.saga.CoreService.events.ProductReservedEvent;
 import com.kafka.saga.ProductService.service.ProductService;
@@ -18,6 +20,10 @@ import org.springframework.stereotype.Component;
 
 @Component
 @RequiredArgsConstructor
+@KafkaListener(
+        topics = "${product.commands.topic.name}",
+        groupId = "${spring.kafka.consumer.group-id}"
+)
 public class ProductCommandHandler {
 
     private static final Logger log = LoggerFactory.getLogger(ProductCommandHandler.class);
@@ -28,10 +34,7 @@ public class ProductCommandHandler {
     private String topicName;
 
 
-    @KafkaListener(
-            topics = "${product.commands.topic.name}",
-            groupId = "${spring.kafka.consumer.group-id}"
-    )
+    @KafkaHandler
     public void handleCommand(@Payload ReserveProductCommand command)
     {
 
@@ -66,5 +69,24 @@ public class ProductCommandHandler {
                     .build();
             kafkaTemplate.send(topicName,reservationFailedEvent);
         }
+    }
+
+    @KafkaHandler
+    public void handleCommand(@Payload CancelProductReservationCommand cancelProductReservationCommand)
+    {
+        log.info("========== CANCEL PRODUCT RESERVATION COMMAND RECEIVED ==========");
+        log.info("========== orderid:"+cancelProductReservationCommand.getOrderId());
+        Product productToCancel = Product.builder()
+                .productId(cancelProductReservationCommand.getProductId())
+                .quantity(cancelProductReservationCommand.getProductQuantity())
+                .build();
+        productService.cancelReservation(productToCancel,cancelProductReservationCommand.getOrderId());
+
+        ProductReservationCancelledEvent productReservationCancelledEvent = ProductReservationCancelledEvent.builder()
+                .productId(cancelProductReservationCommand.getProductId())
+                .orderId(cancelProductReservationCommand.getOrderId())
+                .build();
+
+        kafkaTemplate.send(topicName,productReservationCancelledEvent);
     }
 }
